@@ -12,19 +12,14 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.bson.Document;
 
-import java.util.Arrays;
-import java.util.Properties;
-import java.util.Scanner;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.*;
 
 public class Consumer {
     private static Scanner in;
-//    public static final Logger logger = LogManager.getLogger(Consumer.class);
 
     public static void main(String[] argv) throws Exception {
-//        logger.error("Testing error");
-//        logger.info("Hello info");
-//        logger.warn("test");
-
         if (argv.length != 2) {
             System.err.printf("Usage: %s <topicName> <groupId>\n",
                     Consumer.class.getSimpleName());
@@ -61,7 +56,7 @@ public class Consumer {
             configProperties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.ByteArrayDeserializer");
             configProperties.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringDeserializer");
             configProperties.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
-            configProperties.put(ConsumerConfig.CLIENT_ID_CONFIG, "simple");
+            configProperties.put(ConsumerConfig.CLIENT_ID_CONFIG, "id1");
 
             //Figure out where to start processing messages from
             kafkaConsumer = new KafkaConsumer<String, String>(configProperties);
@@ -74,31 +69,50 @@ public class Consumer {
                         String tmp = record.value();
                         String[] arrOfStr = tmp.split("\\|");
                         System.out.println(record.value()); //Prints the recorded log
-//                        for (String a : arrOfStr)
-                        String logDate = arrOfStr[0];
+
+                        //Returns the omitted string with no leading and trailing spaces.
+                        int x = 0;
+                        for (String a : arrOfStr){
+                            arrOfStr[x] = arrOfStr[x].trim();
+                            x++;
+                        }
+
+                        //Split timeStamp into logDate and logTime to convert into ISO8601 standard
+                        //String[] date = arrOfStr[0].split("\\s+");
+                        SimpleDateFormat isoFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+                        isoFormat.setTimeZone(TimeZone.getTimeZone("GMT"));
+                        Date logDate = null;
+                        try {
+                            logDate = isoFormat.parse(arrOfStr[0]);
+                        } catch (ParseException e) {
+                            e.printStackTrace();
+                        }
+//                        String logDate = arrOfStr[0];
+
+
                         String logLevel = arrOfStr[1];
-                        String logServer = arrOfStr[2];
-                        logServer = logServer.replace("[", "");
+                        String logServer = arrOfStr[2]; //Used as logName and logServer
+                        logServer = logServer.replace("[", ""); //Remove brackets
                         logServer = logServer.replace("]", "");
+
                         String logMain = arrOfStr[3];
                         String logDetail = arrOfStr[4];
-//                        System.out.println(logServer.length());
-//                        System.out.println(logDate + logLevel + logServer + logMain + logMessage + "\n");
 
                         //Push logs into mongodb
                         MongoClientURI connectionString = new MongoClientURI("mongodb://localhost:27017");
                         MongoClient mongoClient = new MongoClient(connectionString);
                         MongoDatabase database = mongoClient.getDatabase("TEBLogs");
                         MongoCollection<Document> collection = database.getCollection("logs");
-                        Document doc = new Document("name", "GeneratedLog").append("timestamp", logDate)
+                        Document doc = new Document("name", logServer).append("date", logDate)
                                 .append("level", logLevel).append("server", logServer).append("detail", logDetail)
                                 .append("source", logMain);
                         collection.insertOne(doc);
                     }
+                    //"date" : ISODate("2014-01-01T08:15:39.736Z")
                 }
             } catch (WakeupException ex) {
                 System.out.println("Exception caught " + ex.getMessage());
-            } finally {
+            }  finally {
                 kafkaConsumer.close();
                 System.out.println("After closing KafkaConsumer");
             }
@@ -109,4 +123,3 @@ public class Consumer {
         }
     }
 }
-
